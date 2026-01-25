@@ -4,16 +4,16 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name="easyone-sdk",
+    name="ez1-python-sdk",
     version="1.0.0",
-    author="EasyOne",
+    author="ez1",
     description="Official Python SDK for EasyOne API with client-side encryption",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/your-org/easyone",
+    url="https://github.com/ez1-cc/python-sdk",
     project_urls={
-        "Bug Reports": "https://github.com/your-org/easyone/issues",
-        "Source": "https://github.com/your-org/easyone/tree/main/sdk/python",
+        "Bug Reports": "https://github.com/ez1-cc/python-sdk/issues",
+        "Source": "https://github.com/ez1-cc/python-sdk",
     },
     packages=find_packages(),
     classifiers=[
@@ -41,5 +41,5 @@ setup(
             "mypy>=1.5.0",
         ],
     },
-    keywords="easyone file-upload encryption aes-gcm storage sdk",
+    keywords="ez1 file-upload encryption aes-gcm storage sdk",
 )
