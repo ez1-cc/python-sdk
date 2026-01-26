@@ -5,17 +5,17 @@ Official Python SDK for interacting with EasyOne API. Provides client-side AES-G
 ## Installation
 
 ```bash
-pip install easyone-sdk
+pip install ez1-python-sdk
 ```
 
 ## Quick Start
 
 ```python
-from easyone import EasyOneClient
+from ez1 import EasyOneClient
 
 client = EasyOneClient(
     api_key='up_live_YOUR_KEY_HERE',  # Replace with your actual API key
-    base_url='https://easyone.io',  # optional
+    base_url='https://file.ez1.cc',  # optional
 )
 
 # Upload a file

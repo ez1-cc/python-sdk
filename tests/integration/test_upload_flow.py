@@ -6,7 +6,7 @@ import os
 import pytest
 import tempfile
 from pathlib import Path
-from easyone import EasyOneClient
+from ez1 import EasyOneClient
 from tests.helpers.config import config
 
 

@@ -13,7 +13,7 @@ import pytest
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from easyone import EasyOneClient
+from ez1 import EasyOneClient
 from tests.helpers.config import config
 
 

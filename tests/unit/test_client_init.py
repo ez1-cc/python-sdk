@@ -2,7 +2,7 @@
 Unit tests for client initialization.
 """
 import pytest
-from easyone import EasyOneClient
+from ez1 import EasyOneClient
 
 
 @pytest.mark.unit

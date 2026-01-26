@@ -5,7 +5,7 @@ Tests require a valid API key and make real network calls.
 import os
 import pytest
 import tempfile
-from easyone import EasyOneClient
+from ez1 import EasyOneClient
 from tests.helpers.config import config
 
 

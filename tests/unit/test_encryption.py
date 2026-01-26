@@ -3,7 +3,7 @@ Unit tests for encryption/decryption functionality.
 """
 import pytest
 import base64
-from easyone import EasyOneClient
+from ez1 import EasyOneClient
 
 
 @pytest.mark.unit

@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="ez1-python-sdk",
-    version="1.0.0",
+    version="1.0.1",
     author="ez1",
     description="Official Python SDK for EasyOne API with client-side encryption",
     long_description=long_description,

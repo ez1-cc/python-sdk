@@ -3,7 +3,7 @@ Unit tests for error handling scenarios.
 """
 import pytest
 from unittest.mock import Mock, patch
-from easyone import EasyOneClient
+from ez1 import EasyOneClient
 import requests
 
 

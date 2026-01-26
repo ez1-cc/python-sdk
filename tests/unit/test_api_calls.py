@@ -4,7 +4,7 @@ Unit tests for API calls (with mocks).
 import io
 import pytest
 from unittest.mock import Mock, patch, call
-from easyone import EasyOneClient
+from ez1 import EasyOneClient
 
 
 @pytest.mark.unit
