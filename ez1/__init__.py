@@ -176,9 +176,10 @@ class EasyOneClient:
         total_chunks: int,
         encrypted_data: bytes,
         metadata: Dict[str, Any],
+        max_retries: int = 5,
     ) -> str:
         """
-        Upload a single encrypted chunk.
+        Upload a single encrypted chunk with retry logic for rate limiting.
 
         Returns:
             The CID (Content ID) returned by the server
@@ -210,21 +211,40 @@ class EasyOneClient:
         if metadata.get("downloadLimit") is not None:
             headers["x-download-limit"] = str(metadata["downloadLimit"])
 
-        response = self.session.post(
-            url,
-            headers=headers,
-            data=encrypted_data,
-        )
+        last_error = None
 
-        if not response.ok:
+        for attempt in range(max_retries + 1):
+            response = self.session.post(
+                url,
+                headers=headers,
+                data=encrypted_data,
+            )
+
+            if response.ok:
+                # Extract CID from response
+                result = response.json()
+                if "cid" not in result:
+                    raise Exception(f"Server did not return CID: {result}")
+                return result["cid"]
+
+            if response.status_code == 429:
+                # Rate limited - get Retry-After header
+                retry_after = response.headers.get("Retry-After")
+                wait_seconds = int(retry_after) if retry_after else (2 ** attempt)
+
+                last_error = Exception(
+                    f"Rate limited. Retry after {wait_seconds} seconds. (Attempt {attempt + 1}/{max_retries + 1})"
+                )
+
+                if attempt < max_retries:
+                    import time
+                    time.sleep(wait_seconds)
+                    continue
+
+            # Non-429 error or max retries exceeded
             raise Exception(f"Upload failed: {response.text}")
 
-        # Extract CID from response
-        result = response.json()
-        if "cid" not in result:
-            raise Exception(f"Server did not return CID: {result}")
-
-        return result["cid"]
+        raise last_error or Exception("Upload failed after retries")
 
     def complete_upload(
         self,
