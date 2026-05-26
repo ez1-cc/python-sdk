@@ -88,6 +88,7 @@ class TestAPICalls:
             assert headers["Authorization"] == "Bearer up_live_test12345"
             assert headers["x-cid"] == cid  # Subsequent chunks send CID
             assert headers["x-chunk-index"] == str(chunk_index)
+            assert headers["x-file-name"] == "test%20file.txt"
 
     def test_complete_upload_success(self, client, mock_response):
         """Test successful complete upload."""

@@ -41,7 +41,7 @@ class TestClientInit:
 
     def test_default_base_url_constant(self):
         """Test the DEFAULT_BASE_URL constant."""
-        assert EasyOneClient.DEFAULT_BASE_URL == "https://easyone.io"
+        assert EasyOneClient.DEFAULT_BASE_URL == "https://file.ez1.cc"
 
     def test_default_chunk_size_constant(self):
         """Test the DEFAULT_CHUNK_SIZE constant."""
@@ -55,7 +55,7 @@ class TestClientInit:
         """Test that a requests Session is created."""
         import requests
 
-        client = EasyOneClient(api_key="up_test_key")
+        client = EasyOneClient(api_key="up_live_session_key")
 
         assert isinstance(client.session, requests.Session)
 
@@ -97,10 +97,10 @@ class TestClientInit:
         client = EasyOneClient(api_key="up_live_valid_key_123")
         assert client.api_key == "up_live_valid_key_123"
 
-    def test_api_key_validation_up_test(self):
-        """Test API key validation for up_test_ prefix."""
-        client = EasyOneClient(api_key="up_test_valid_key_456")
-        assert client.api_key == "up_test_valid_key_456"
+    def test_api_key_validation_up_test_rejected(self):
+        """Test API key validation rejects the unsupported up_test_ prefix."""
+        with pytest.raises(ValueError, match="Invalid API key format"):
+            EasyOneClient(api_key="up_test_valid_key_456")
 
     def test_api_key_validation_invalid_prefix(self):
         """Test API key validation rejects invalid prefix."""

@@ -97,7 +97,7 @@ class TestErrorHandling:
         mock_download_response.statusText = "Not Found"
 
         with patch.object(client.session, 'get', return_value=mock_info_response):
-            with patch('easyone.requests.get', return_value=mock_download_response):
+            with patch('ez1.requests.get', return_value=mock_download_response):
                 with pytest.raises(Exception) as exc_info:
                     client.download_file("test-cid", "decryption_key")
 
@@ -219,6 +219,6 @@ class TestErrorHandling:
                 },
             )
 
-            # Filename should be passed as-is (URL encoding handled by requests)
+            # Filename is URL-encoded to match the public API contract.
             call_args = mock_post.call_args
-            assert call_args.kwargs['headers']['x-file-name'] == special_filename
+            assert call_args.kwargs['headers']['x-file-name'] == "test%20file%20%281%29%20%5Bcopy%5D.txt"

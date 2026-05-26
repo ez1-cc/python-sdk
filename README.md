@@ -26,6 +26,7 @@ result = client.upload_file(
         'mimeType': 'application/pdf',
         'retentionDays': 30,  # Days to keep the file (default: 30)
         # Set to 0 for indefinite retention (requires unlimited retention permission)
+        'private': True,  # Basic plan or higher: encrypts metadata while keeping CID + key links shareable
     }
 )
 
@@ -112,7 +113,7 @@ EASYONE_API_KEY=up_live_YOUR_KEY_HERE
 ### Client-Side Validation
 
 The SDK now includes:
-- API key format validation (must start with `up_live_` or `up_test_`)
+- API key format validation (must start with `up_live_`)
 - File size validation (max 100GB)
 - File type validation (blocks executable files)
 

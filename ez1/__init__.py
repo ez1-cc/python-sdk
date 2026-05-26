@@ -8,6 +8,8 @@ Provides client-side AES-GCM encryption and chunked upload functionality.
 import os
 import base64
 import uuid
+import json
+from urllib.parse import quote
 from typing import Optional, BinaryIO, Dict, Any
 from pathlib import Path
 
@@ -28,7 +30,7 @@ class EasyOneClient:
     Main EasyOne Client for Python.
     """
 
-    DEFAULT_BASE_URL = "https://easyone.io"
+    DEFAULT_BASE_URL = "https://file.ez1.cc"
     DEFAULT_CHUNK_SIZE = 15 * 1024 * 1024  # 15MB
     IV_LENGTH = 12
 
@@ -42,7 +44,7 @@ class EasyOneClient:
 
         Args:
             api_key: Your EasyOne API key
-            base_url: API base URL (defaults to https://easyone.io)
+            base_url: API base URL (defaults to https://file.ez1.cc)
 
         Note:
             Chunk size is fixed at 15MB for compatibility with CDN download workers.
@@ -56,9 +58,9 @@ class EasyOneClient:
         api_key = api_key.strip()
 
         # Validate API key format
-        if not (api_key.startswith("up_live_") or api_key.startswith("up_test_")):
+        if not api_key.startswith("up_live_"):
             raise ValueError(
-                "Invalid API key format. API keys must start with 'up_live_' or 'up_test_'"
+                "Invalid API key format. API keys must start with 'up_live_'"
             )
 
         self.api_key = api_key
@@ -82,7 +84,7 @@ class EasyOneClient:
 
         Args:
             file_path: Path to file or file-like object
-            options: Optional metadata (fileName, mimeType, retentionDays, downloadLimit)
+            options: Optional metadata (fileName, mimeType, retentionDays, downloadLimit, private)
 
         Returns:
             Dict with 'cid' and 'decryptionKey'
@@ -128,6 +130,18 @@ class EasyOneClient:
         try:
             # Generate encryption key
             encryption_key, decryption_key = self._generate_encryption_key()
+            mime_type = options.get("mimeType", "application/octet-stream")
+            is_private = bool(options.get("private") or options.get("isPrivate"))
+            encrypted_metadata = None
+            if is_private:
+                encrypted_metadata = self._encrypt_metadata(
+                    {
+                        "filename": file_name,
+                        "mimeType": mime_type,
+                        "size": file_size,
+                    },
+                    encryption_key,
+                )
 
             # Calculate chunks (ensure at least 1 chunk even for empty files)
             total_chunks = max(1, (file_size + self.chunk_size - 1) // self.chunk_size)
@@ -157,9 +171,11 @@ class EasyOneClient:
                     {
                         "fileName": file_name,
                         "fileSize": file_size,
-                        "mimeType": options.get("mimeType", "application/octet-stream"),
+                        "mimeType": mime_type,
                         "retentionDays": options.get("retentionDays", 30),
                         "downloadLimit": options.get("downloadLimit"),
+                        "isPrivate": is_private,
+                        "encryptedMetadata": encrypted_metadata,
                     },
                 )
 
@@ -194,9 +210,9 @@ class EasyOneClient:
         headers.update({
             "x-chunk-index": str(chunk_index),
             "x-total-chunks": str(total_chunks),
-            "x-file-name": metadata["fileName"],
-            "x-file-size": str(metadata["fileSize"]),
-            "x-mime-type": metadata["mimeType"],
+            "x-file-name": quote("private-file" if metadata.get("isPrivate") else metadata["fileName"], safe=""),
+            "x-file-size": "0" if metadata.get("isPrivate") else str(metadata["fileSize"]),
+            "x-mime-type": "application/octet-stream" if metadata.get("isPrivate") else metadata["mimeType"],
             "x-retention-days": str(metadata["retentionDays"]),
         })
 
@@ -210,6 +226,11 @@ class EasyOneClient:
 
         if metadata.get("downloadLimit") is not None:
             headers["x-download-limit"] = str(metadata["downloadLimit"])
+
+        if metadata.get("isPrivate"):
+            headers["x-private"] = "true"
+            if metadata.get("encryptedMetadata"):
+                headers["x-encrypted-metadata"] = metadata["encryptedMetadata"]
 
         last_error = None
 
@@ -424,6 +445,23 @@ class EasyOneClient:
         nonce = os.urandom(self.IV_LENGTH)
         ciphertext = aesgcm.encrypt(nonce, data, None)
         return nonce + ciphertext
+
+    def _encrypt_metadata(self, metadata: Dict[str, Any], key: bytes) -> str:
+        """Encrypt private file metadata using the same AES-GCM key."""
+        aesgcm = AESGCM(key)
+        nonce = os.urandom(self.IV_LENGTH)
+        plaintext = json.dumps(metadata, separators=(",", ":")).encode("utf-8")
+        ciphertext = aesgcm.encrypt(nonce, plaintext, None)
+        return base64.b64encode(nonce + ciphertext).decode("utf-8")
+
+    def _decrypt_metadata(self, encrypted_metadata: str, key_string: str) -> Dict[str, Any]:
+        """Decrypt private file metadata returned by the API."""
+        key = base64.b64decode(key_string)
+        payload = base64.b64decode(encrypted_metadata)
+        aesgcm = AESGCM(key)
+        nonce = payload[: self.IV_LENGTH]
+        ciphertext = payload[self.IV_LENGTH :]
+        return json.loads(aesgcm.decrypt(nonce, ciphertext, None).decode("utf-8"))
 
     def _decrypt_chunk(self, encrypted_data: bytes, key_string: str) -> bytes:
         """Decrypt a chunk of data using AES-GCM."""
