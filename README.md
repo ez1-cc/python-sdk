@@ -94,6 +94,8 @@ EasyOneClient(
 - `get_download_info(cid)` - Get download URL and metadata
 - `get_metadata(cid)` - Get file metadata
 - `list_files(limit=50, offset=0)` - List user's files
+- `build_encrypted_metadata(metadata, decryption_key)` - Encrypt metadata for low-level uploads
+- `decrypt_metadata(encrypted_metadata, key)` - Decrypt encrypted metadata
 - `encrypt_data(data)` - Encrypt data without uploading
 - `decrypt_data(encrypted_data, key)` - Decrypt data
 
