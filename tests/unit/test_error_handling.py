@@ -29,6 +29,7 @@ class TestErrorHandling:
                         "fileSize": 100,
                         "mimeType": "text/plain",
                         "retentionDays": 30,
+                        "encryptedMetadata": "AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBB",
                     },
                 )
 
@@ -42,7 +43,12 @@ class TestErrorHandling:
 
         with patch.object(client.session, 'post', return_value=mock_response):
             with pytest.raises(Exception) as exc_info:
-                client.complete_upload("invalid-cid", {"fileName": "test.txt", "fileSize": 100, "mimeType": "text/plain"})
+                client.complete_upload("invalid-cid", {
+                    "fileName": "test.txt",
+                    "fileSize": 100,
+                    "mimeType": "text/plain",
+                    "encryptedMetadata": "AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+                })
 
             assert "Complete upload failed" in str(exc_info.value)
 
@@ -166,6 +172,7 @@ class TestErrorHandling:
                         "fileSize": 100,
                         "mimeType": "text/plain",
                         "retentionDays": 30,
+                        "encryptedMetadata": "AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBB",
                     },
                 )
 
@@ -216,9 +223,11 @@ class TestErrorHandling:
                     "fileSize": 100,
                     "mimeType": "text/plain",
                     "retentionDays": 30,
+                    "encryptedMetadata": "AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBB",
                 },
             )
 
-            # Filename is URL-encoded to match the public API contract.
+            # User-facing filename is now only present inside encrypted metadata.
             call_args = mock_post.call_args
-            assert call_args.kwargs['headers']['x-file-name'] == "test%20file%20%281%29%20%5Bcopy%5D.txt"
+            assert call_args.kwargs['headers']['x-file-name'] == "encrypted-metadata"
+            assert call_args.kwargs['headers']['x-encrypted-metadata'] == "AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBB"

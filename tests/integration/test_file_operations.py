@@ -109,6 +109,10 @@ class TestFileOperations:
         assert "mimeType" in metadata
         assert "uploadedAt" in metadata
         assert metadata["id"] == file_info["cid"]
+        assert metadata["filename"] is None
+        assert metadata["size"] is None
+        assert metadata["mimeType"] is None
+        assert metadata["encryptedMetadata"]
 
     def test_get_metadata_fields(self, integration_client, test_files):
         """Test that metadata contains all expected fields."""
@@ -145,9 +149,10 @@ class TestFileOperations:
             result = integration_client.upload_file(temp_path, options=upload_options)
             metadata = integration_client.get_metadata(result["cid"])
 
-            assert metadata["filename"] == upload_options["fileName"]
-            assert metadata["mimeType"] == upload_options["mimeType"]
-            assert metadata["size"] == len(test_content)
+            assert metadata["filename"] is None
+            assert metadata["mimeType"] is None
+            assert metadata["size"] is None
+            assert metadata["encryptedMetadata"]
 
         finally:
             os.unlink(temp_path)
@@ -192,7 +197,8 @@ class TestFileOperations:
             result = integration_client.upload_file(temp_path)
             metadata = integration_client.get_metadata(result["cid"])
 
-            assert metadata["size"] == 1000
+            assert metadata["size"] is None
+            assert metadata["encryptedMetadata"]
 
         finally:
             os.unlink(temp_path)

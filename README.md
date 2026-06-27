@@ -26,13 +26,15 @@ result = client.upload_file(
         'mimeType': 'application/pdf',
         'retentionDays': 30,  # Days to keep the file (default: 30)
         # Set to 0 for indefinite retention (requires unlimited retention permission)
-        'private': True,  # Basic plan or higher: uploader-only access with encrypted metadata
+        'private': True,  # Optional, Basic plan or higher: restrict access to the uploader
     }
 )
 
 print(f"CID: {result['cid']}")
 print(f"Decryption Key: {result['decryptionKey']}")
 ```
+
+All uploads encrypt filename, MIME type, and original size as client-side metadata. The `private` option only adds uploader-only access control.
 
 ## Downloading a File
 
@@ -51,7 +53,12 @@ data = client.download_file(
 files = client.list_files(limit=20)
 
 for file in files['files']:
-    print(f"{file['filename']} - {file['size']} bytes")
+    print(f"{file['id']} - encrypted metadata: {bool(file.get('encryptedMetadata'))}")
+
+metadata = client.get_metadata('content-id')
+if metadata.get('encryptedMetadata'):
+    plain = client.decrypt_metadata(metadata['encryptedMetadata'], 'decryption-key')
+    print(f"{plain['filename']} ({plain['size']} bytes)")
 ```
 
 ## Encryption Only

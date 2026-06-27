@@ -30,6 +30,7 @@ class TestAPICalls:
                     "mimeType": "text/plain",
                     "retentionDays": 30,
                     "downloadLimit": 10,
+                    "encryptedMetadata": "AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBB",
                 },
             )
 
@@ -53,11 +54,35 @@ class TestAPICalls:
                     "mimeType": "text/plain",
                     "retentionDays": 30,
                     "downloadLimit": None,
+                    "encryptedMetadata": "AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBB",
                 },
             )
 
             # Verify server's CID is returned
             assert result_cid == "server-generated-cid"
+
+    def test_upload_chunk_without_encrypted_metadata_legacy(self, client, mock_response):
+        """Test legacy chunk upload without encrypted metadata."""
+        mock_response.json.return_value = {"cid": "server-generated-cid", "success": True, "message": "Chunk uploaded"}
+        mock_response.ok = True
+
+        with patch.object(client.session, 'post', return_value=mock_response) as mock_post:
+            client._upload_chunk(
+                cid=None,
+                chunk_index=0,
+                total_chunks=1,
+                encrypted_data=b"encrypted_data",
+                metadata={
+                    "fileName": "legacy.txt",
+                    "fileSize": 1024,
+                    "mimeType": "text/plain",
+                    "retentionDays": 30,
+                    "downloadLimit": None,
+                },
+            )
+
+            headers = mock_post.call_args.kwargs["headers"]
+            assert "x-encrypted-metadata" not in headers
 
     def test_upload_chunk_request_format(self, client, mock_response):
         """Test that upload request has correct format (subsequent chunk with CID)."""
@@ -75,6 +100,7 @@ class TestAPICalls:
                 "mimeType": "application/octet-stream",
                 "retentionDays": 7,
                 "downloadLimit": 5,
+                "encryptedMetadata": "AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBB",
             }
 
             client._upload_chunk(cid, chunk_index, total_chunks, encrypted_data, metadata)
@@ -88,7 +114,10 @@ class TestAPICalls:
             assert headers["Authorization"] == "Bearer up_live_test12345"
             assert headers["x-cid"] == cid  # Subsequent chunks send CID
             assert headers["x-chunk-index"] == str(chunk_index)
-            assert headers["x-file-name"] == "test%20file.txt"
+            assert headers["x-file-name"] == "encrypted-metadata"
+            assert headers["x-file-size"] == "2048"
+            assert headers["x-mime-type"] == "application/octet-stream"
+            assert headers["x-encrypted-metadata"] == "AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBB"
 
     def test_complete_upload_success(self, client, mock_response):
         """Test successful complete upload."""
@@ -101,11 +130,43 @@ class TestAPICalls:
                     "fileName": "test.txt",
                     "fileSize": 1024,
                     "mimeType": "text/plain",
+                    "encryptedMetadata": "AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBB",
                 },
             )
 
             assert result["cid"] == "test-cid"
             assert result["success"] is True
+
+    def test_complete_upload_without_encrypted_metadata_legacy(self, client, mock_response):
+        """Test legacy complete upload without encrypted metadata."""
+        mock_response.json.return_value = {"cid": "legacy-cid", "success": True}
+
+        with patch.object(client.session, 'post', return_value=mock_response):
+            result = client.complete_upload(
+                cid="legacy-cid",
+                metadata={
+                    "fileName": "legacy.txt",
+                    "fileSize": 1024,
+                    "mimeType": "text/plain",
+                },
+            )
+
+            assert result["cid"] == "legacy-cid"
+            assert result["success"] is True
+
+    def test_build_and_decrypt_encrypted_metadata(self, client):
+        """Test public encrypted metadata helpers."""
+        metadata = {
+            "filename": "report.pdf",
+            "mimeType": "application/pdf",
+            "size": 2048,
+        }
+        key = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
+        encrypted = client.build_encrypted_metadata(metadata, key)
+        decrypted = client.decrypt_metadata(encrypted, key)
+
+        assert decrypted == metadata
 
     def test_get_metadata_success(self, client, sample_cid, mock_metadata_response):
         """Test successful get metadata."""

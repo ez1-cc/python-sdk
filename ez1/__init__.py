@@ -132,16 +132,14 @@ class EasyOneClient:
             encryption_key, decryption_key = self._generate_encryption_key()
             mime_type = options.get("mimeType", "application/octet-stream")
             is_private = bool(options.get("private") or options.get("isPrivate"))
-            encrypted_metadata = None
-            if is_private:
-                encrypted_metadata = self._encrypt_metadata(
-                    {
-                        "filename": file_name,
-                        "mimeType": mime_type,
-                        "size": file_size,
-                    },
-                    encryption_key,
-                )
+            encrypted_metadata = self._encrypt_metadata(
+                {
+                    "filename": file_name,
+                    "mimeType": mime_type,
+                    "size": file_size,
+                },
+                encryption_key,
+            )
 
             # Calculate chunks (ensure at least 1 chunk even for empty files)
             total_chunks = max(1, (file_size + self.chunk_size - 1) // self.chunk_size)
@@ -210,9 +208,9 @@ class EasyOneClient:
         headers.update({
             "x-chunk-index": str(chunk_index),
             "x-total-chunks": str(total_chunks),
-            "x-file-name": quote("private-file" if metadata.get("isPrivate") else metadata["fileName"], safe=""),
-            "x-file-size": "0" if metadata.get("isPrivate") else str(metadata["fileSize"]),
-            "x-mime-type": "application/octet-stream" if metadata.get("isPrivate") else metadata["mimeType"],
+            "x-file-name": quote("encrypted-metadata", safe=""),
+            "x-file-size": str(metadata["fileSize"]),
+            "x-mime-type": "application/octet-stream",
             "x-retention-days": str(metadata["retentionDays"]),
         })
 
@@ -227,10 +225,11 @@ class EasyOneClient:
         if metadata.get("downloadLimit") is not None:
             headers["x-download-limit"] = str(metadata["downloadLimit"])
 
+        if metadata.get("encryptedMetadata"):
+            headers["x-encrypted-metadata"] = metadata["encryptedMetadata"]
+
         if metadata.get("isPrivate"):
             headers["x-private"] = "true"
-            if metadata.get("encryptedMetadata"):
-                headers["x-encrypted-metadata"] = metadata["encryptedMetadata"]
 
         last_error = None
 
@@ -300,6 +299,40 @@ class EasyOneClient:
             raise Exception(f"Complete upload failed: {response.text}")
 
         return response.json()
+
+    def build_encrypted_metadata(
+        self,
+        metadata: Dict[str, Any],
+        decryption_key: str,
+    ) -> str:
+        """
+        Build encrypted metadata for low-level multipart flows.
+
+        Args:
+            metadata: Dict with filename, mimeType, and size
+            decryption_key: Base64 AES key returned by upload/encrypt helpers
+
+        Returns:
+            Base64 AES-GCM metadata payload
+        """
+        if not metadata.get("filename") or not metadata.get("mimeType") or not isinstance(metadata.get("size"), int):
+            raise ValueError("metadata requires filename, mimeType, and integer size")
+
+        key = base64.b64decode(decryption_key)
+        return self._encrypt_metadata(
+            {
+                "filename": metadata["filename"],
+                "mimeType": metadata["mimeType"],
+                "size": metadata["size"],
+            },
+            key,
+        )
+
+    def decrypt_metadata(self, encrypted_metadata: str, decryption_key: str) -> Dict[str, Any]:
+        """
+        Decrypt encrypted metadata returned by metadata/list/download APIs.
+        """
+        return self._decrypt_metadata(encrypted_metadata, decryption_key)
 
     def download_file(
         self,
