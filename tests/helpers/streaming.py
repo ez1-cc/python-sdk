@@ -15,6 +15,7 @@ def upload_path(
     retention_days: int = 30,
     download_limit: Optional[int] = None,
     private: bool = False,
+    embed: bool = False,
 ) -> Dict[str, str]:
     path = Path(file_path)
     with path.open("rb") as source:
@@ -26,4 +27,5 @@ def upload_path(
             retention_days=retention_days,
             download_limit=download_limit,
             private=private,
+            embed=embed,
         )

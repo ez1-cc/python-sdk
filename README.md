@@ -34,7 +34,7 @@ print(f"CID: {result['cid']}")
 print(f"Decryption Key: {result['decryptionKey']}")
 ```
 
-All uploads encrypt filename, MIME type, and original size as client-side metadata. The `private` option only adds uploader-only access control.
+All uploads encrypt filename, MIME type, and original size as client-side metadata. Embedding is disabled by default and must be explicitly enabled with `embed=True`. Private uploads and uploads with a download limit cannot enable embedding.
 
 ## Downloading a File
 

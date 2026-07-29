@@ -30,6 +30,7 @@ class TestErrorHandling:
                         "fileSize": 100,
                         "mimeType": "text/plain",
                         "retentionDays": 30,
+                        "embeddingDisabled": True,
                         "encryptedMetadata": "AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBB",
                     },
                 )
@@ -203,6 +204,7 @@ class TestErrorHandling:
                         "fileSize": 100,
                         "mimeType": "text/plain",
                         "retentionDays": 30,
+                        "embeddingDisabled": True,
                         "encryptedMetadata": "AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBB",
                     },
                 )
@@ -254,6 +256,7 @@ class TestErrorHandling:
                     "fileSize": 100,
                     "mimeType": "text/plain",
                     "retentionDays": 30,
+                    "embeddingDisabled": True,
                     "encryptedMetadata": "AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBB",
                 },
             )

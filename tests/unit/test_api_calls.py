@@ -30,6 +30,7 @@ class TestAPICalls:
                     "mimeType": "text/plain",
                     "retentionDays": 30,
                     "downloadLimit": 10,
+                    "embeddingDisabled": True,
                     "encryptedMetadata": "AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBB",
                 },
             )
@@ -54,6 +55,7 @@ class TestAPICalls:
                     "mimeType": "text/plain",
                     "retentionDays": 30,
                     "downloadLimit": None,
+                    "embeddingDisabled": True,
                     "encryptedMetadata": "AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBB",
                 },
             )
@@ -77,6 +79,39 @@ class TestAPICalls:
         assert result["cid"] == "server-generated-cid"
         assert mock_post.call_count == 2
         assert [len(call.kwargs["data"]) for call in mock_post.call_args_list] == [32, 31]
+        assert all(
+            call.kwargs["headers"]["x-embedding-disabled"] == "true"
+            for call in mock_post.call_args_list
+        )
+
+    def test_upload_file_enables_embedding_only_when_requested(self, client, mock_response):
+        mock_response.json.return_value = {"cid": "server-generated-cid"}
+        with patch.object(client.session, "post", return_value=mock_response) as mock_post:
+            client.upload_file(
+                io.BytesIO(b"a"),
+                file_name="embeddable.bin",
+                file_size=1,
+                mime_type="application/octet-stream",
+                embed=True,
+            )
+
+        assert mock_post.call_args.kwargs["headers"]["x-embedding-disabled"] == "false"
+
+    @pytest.mark.parametrize("options", [
+        {"private": True, "embed": True},
+        {"download_limit": 1, "embed": True},
+    ])
+    def test_upload_file_rejects_embedding_conflicts(self, client, options):
+        with patch.object(client.session, "post") as mock_post:
+            with pytest.raises(ValueError, match="embed cannot be enabled"):
+                client.upload_file(
+                    io.BytesIO(b"a"),
+                    file_name="conflict.bin",
+                    file_size=1,
+                    mime_type="application/octet-stream",
+                    **options,
+                )
+        mock_post.assert_not_called()
 
     def test_upload_file_rejects_short_source(self, client):
         with pytest.raises(ValueError, match="ended early"):
@@ -165,6 +200,7 @@ class TestAPICalls:
                 "mimeType": "application/octet-stream",
                 "retentionDays": 7,
                 "downloadLimit": 5,
+                "embeddingDisabled": True,
                 "encryptedMetadata": "AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBB",
             }
 
@@ -183,6 +219,7 @@ class TestAPICalls:
             assert headers["x-file-size"] == "2048"
             assert headers["x-mime-type"] == "application/octet-stream"
             assert headers["x-encrypted-metadata"] == "AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+            assert headers["x-embedding-disabled"] == "true"
 
     def test_complete_upload_success(self, client, mock_response):
         """Test successful complete upload."""

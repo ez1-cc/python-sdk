@@ -82,6 +82,7 @@ class EasyOneClient:
         retention_days: int = 30,
         download_limit: Optional[int] = None,
         private: bool = False,
+        embed: bool = False,
     ) -> Dict[str, str]:
         """
         Upload a file with client-side encryption.
@@ -94,6 +95,7 @@ class EasyOneClient:
             retention_days: Retention period
             download_limit: Optional download count limit
             private: Restrict access to the uploader
+            embed: Allow embedding for otherwise public, unlimited downloads
 
         Returns:
             Dict with 'cid' and 'decryptionKey'
@@ -108,6 +110,19 @@ class EasyOneClient:
             raise ValueError("file_name and mime_type are required")
         if not isinstance(file_size, int) or isinstance(file_size, bool) or file_size < 0:
             raise ValueError("file_size must be a non-negative integer")
+        if not isinstance(private, bool) or not isinstance(embed, bool):
+            raise TypeError("private and embed must be booleans")
+        if download_limit is not None and (
+            not isinstance(download_limit, int)
+            or isinstance(download_limit, bool)
+            or download_limit < 1
+        ):
+            raise ValueError("download_limit must be a positive integer")
+        if embed and (private or download_limit is not None):
+            raise ValueError(
+                "embed cannot be enabled for private uploads or uploads with a download limit"
+            )
+        embedding_disabled = not embed or private or download_limit is not None
 
         # Client-side validation: Check file size (100GB max for enterprise, 5GB default)
         max_file_size = 100 * 1024 * 1024 * 1024  # 100GB
@@ -150,6 +165,7 @@ class EasyOneClient:
                     "retentionDays": retention_days,
                     "downloadLimit": download_limit,
                     "isPrivate": private,
+                    "embeddingDisabled": embedding_disabled,
                     "encryptedMetadata": encrypted_metadata,
                 },
             )
@@ -229,6 +245,11 @@ class EasyOneClient:
             headers["x-download-limit"] = str(metadata["downloadLimit"])
 
         headers["x-encrypted-metadata"] = metadata["encryptedMetadata"]
+
+        embedding_disabled = metadata.get("embeddingDisabled")
+        if not isinstance(embedding_disabled, bool):
+            raise ValueError("embeddingDisabled is required and must be a boolean")
+        headers["x-embedding-disabled"] = "true" if embedding_disabled else "false"
 
         if metadata.get("isPrivate"):
             headers["x-private"] = "true"
