@@ -94,7 +94,8 @@ class EasyOneClient:
             mime_type: User-facing MIME type
             retention_days: Retention period
             download_limit: Optional download count limit
-            private: Restrict access to the uploader
+            private: Enable owner-only Document Privilege. File content and
+                user-facing metadata are encrypted for every upload.
             embed: Allow embedding for otherwise public, unlimited downloads
 
         Returns:
@@ -120,7 +121,7 @@ class EasyOneClient:
             raise ValueError("download_limit must be a positive integer")
         if embed and (private or download_limit is not None):
             raise ValueError(
-                "embed cannot be enabled for private uploads or uploads with a download limit"
+                "embed cannot be enabled with owner-only Document Privilege or a download limit"
             )
         embedding_disabled = not embed or private or download_limit is not None
 
@@ -551,7 +552,7 @@ class EasyOneClient:
         return nonce + ciphertext
 
     def _encrypt_metadata(self, metadata: Dict[str, Any], key: bytes) -> str:
-        """Encrypt private file metadata using the same AES-GCM key."""
+        """Encrypt user-facing file metadata using the same AES-GCM key."""
         aesgcm = AESGCM(key)
         nonce = os.urandom(self.IV_LENGTH)
         plaintext = json.dumps(metadata, separators=(",", ":")).encode("utf-8")
@@ -559,7 +560,7 @@ class EasyOneClient:
         return base64.b64encode(nonce + ciphertext).decode("utf-8")
 
     def _decrypt_metadata(self, encrypted_metadata: str, key_string: str) -> Dict[str, Any]:
-        """Decrypt private file metadata returned by the API."""
+        """Decrypt user-facing file metadata returned by the API."""
         key = base64.b64decode(key_string)
         payload = base64.b64decode(encrypted_metadata)
         aesgcm = AESGCM(key)
