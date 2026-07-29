@@ -3,14 +3,13 @@ Integration tests for download flow.
 Tests require a valid API key and make real network calls.
 """
 import os
+import io
 import pytest
 import tempfile
+from pathlib import Path
 from ez1 import EasyOneClient
 from tests.helpers.config import config
-
-# Initialize Web Crypto API for Node.js
-# Note: Python doesn't need this, it uses cryptography library
-
+from tests.helpers.streaming import upload_path
 
 @pytest.mark.integration
 @pytest.mark.network
@@ -38,13 +37,10 @@ class TestDownloadFlow:
             temp_path = f.name
 
         try:
-            result = integration_client.upload_file(
-                temp_path,
-                options={
-                    "fileName": "download_test.txt",
-                    "mimeType": "text/plain",
-                    "retentionDays": 7,
-                },
+            result = upload_path(
+                integration_client, temp_path,
+                file_name="download_test.txt", mime_type="text/plain",
+                retention_days=7,
             )
 
             return {
@@ -64,7 +60,10 @@ class TestDownloadFlow:
         assert "filename" in download_info
         assert "size" in download_info
         assert "mimeType" in download_info
-        assert download_info["filename"] == "download_test.txt"
+        assert download_info["filename"] is None
+        assert download_info["size"] is None
+        assert download_info["mimeType"] is None
+        assert download_info["encryptedMetadata"]
 
     def test_download_to_memory(self, integration_client, uploaded_file):
         """Test downloading file to memory."""
@@ -72,10 +71,6 @@ class TestDownloadFlow:
 
         # Get download info first to check if CDN is available
         download_info = integration_client.get_download_info(uploaded_file["cid"])
-
-        # Debug output
-        print(f"\n[DEBUG] CDN URL from config: {config.cdn_base_url}")
-        print(f"[DEBUG] Download URL: {download_info['downloadUrl']}")
 
         # Check if the download URL uses the configured CDN
         is_configured_cdn = config.cdn_base_url in download_info["downloadUrl"]
@@ -86,12 +81,14 @@ class TestDownloadFlow:
             # The encryption/decryption is tested in test_encrypt_decrypt_round_trip
             pytest.skip(f"CDN download skipped (expected CDN: {config.cdn_base_url}, got: {download_info['downloadUrl']})")
 
-        decrypted_data = integration_client.download_file(
+        destination = io.BytesIO()
+        integration_client.download_file(
             uploaded_file["cid"],
             uploaded_file["decryptionKey"],
+            destination,
         )
 
-        assert decrypted_data == uploaded_file["originalContent"]
+        assert destination.getvalue() == uploaded_file["originalContent"]
 
     def test_download_to_file(self, integration_client, uploaded_file):
         """Test downloading file to disk."""
@@ -110,11 +107,11 @@ class TestDownloadFlow:
             output_path = f.name
 
         try:
-            integration_client.download_file(
-                uploaded_file["cid"],
-                uploaded_file["decryptionKey"],
-                output_path=output_path,
-            )
+            with open(output_path, "wb") as destination:
+                integration_client.download_file(
+                    uploaded_file["cid"], uploaded_file["decryptionKey"],
+                    destination,
+                )
 
             # Verify the file was written correctly
             with open(output_path, "rb") as f:
@@ -141,13 +138,9 @@ class TestDownloadFlow:
 
         try:
             # Upload
-            upload_result = integration_client.upload_file(
-                temp_path,
-                options={
-                    "fileName": "roundtrip_test.dat",
-                    "mimeType": "application/octet-stream",
-                    "retentionDays": 7,
-                },
+            upload_result = upload_path(
+                integration_client, temp_path,
+                file_name="roundtrip_test.dat", retention_days=7,
             )
 
             # Check if CDN is available
@@ -160,13 +153,15 @@ class TestDownloadFlow:
                 pytest.skip("CDN download skipped (requires production environment)")
 
             # Download
-            downloaded_content = integration_client.download_file(
+            destination = io.BytesIO()
+            integration_client.download_file(
                 upload_result["cid"],
                 upload_result["decryptionKey"],
+                destination,
             )
 
             # Verify content matches
-            assert downloaded_content == original_content
+            assert destination.getvalue() == original_content
 
         finally:
             os.unlink(temp_path)
@@ -182,13 +177,9 @@ class TestDownloadFlow:
 
         try:
             # Upload
-            upload_result = integration_client.upload_file(
-                temp_path,
-                options={
-                    "fileName": "binary_download_test.bin",
-                    "mimeType": "application/octet-stream",
-                    "retentionDays": 1,
-                },
+            upload_result = upload_path(
+                integration_client, temp_path,
+                file_name="binary_download_test.bin", retention_days=1,
             )
 
             # Check if CDN is available
@@ -201,13 +192,15 @@ class TestDownloadFlow:
                 pytest.skip("CDN download skipped (requires production environment)")
 
             # Download
-            downloaded_content = integration_client.download_file(
+            destination = io.BytesIO()
+            integration_client.download_file(
                 upload_result["cid"],
                 upload_result["decryptionKey"],
+                destination,
             )
 
             # Verify all bytes match
-            assert downloaded_content == original_content
+            assert destination.getvalue() == original_content
 
         finally:
             os.unlink(temp_path)
@@ -254,13 +247,9 @@ class TestDownloadFlow:
 
         try:
             # Upload
-            upload_result = integration_client.upload_file(
-                temp_path,
-                options={
-                    "fileName": "large_download_test.bin",
-                    "mimeType": "application/octet-stream",
-                    "retentionDays": 1,
-                },
+            upload_result = upload_path(
+                integration_client, temp_path,
+                file_name="large_download_test.bin", retention_days=1,
             )
 
             # Check if CDN is available
@@ -273,10 +262,13 @@ class TestDownloadFlow:
                 pytest.skip("CDN download skipped (requires production environment)")
 
             # Download
-            downloaded_content = integration_client.download_file(
+            destination = io.BytesIO()
+            integration_client.download_file(
                 upload_result["cid"],
                 upload_result["decryptionKey"],
+                destination,
             )
+            downloaded_content = destination.getvalue()
 
             # Verify content
             assert downloaded_content == original_content
@@ -296,13 +288,9 @@ class TestDownloadFlow:
             temp_path = f.name
 
         try:
-            upload_result = integration_client.upload_file(
-                temp_path,
-                options={
-                    "fileName": "very_large_download.bin",
-                    "mimeType": "application/octet-stream",
-                    "retentionDays": 1,
-                },
+            upload_result = upload_path(
+                integration_client, temp_path,
+                file_name="very_large_download.bin", retention_days=1,
             )
 
             # Check if CDN is available
@@ -314,12 +302,14 @@ class TestDownloadFlow:
             if not is_configured_cdn or not has_test_token:
                 pytest.skip("CDN download skipped (requires production environment)")
 
-            downloaded_content = integration_client.download_file(
+            destination = io.BytesIO()
+            integration_client.download_file(
                 upload_result["cid"],
                 upload_result["decryptionKey"],
+                destination,
             )
 
-            assert downloaded_content == original_content
+            assert destination.getvalue() == original_content
 
         finally:
             os.unlink(temp_path)
@@ -349,11 +339,12 @@ class TestDownloadFlow:
         )
 
         try:
-            integration_client.download_file(
-                uploaded_file["cid"],
-                uploaded_file["decryptionKey"],
-                output_path=output_path,
-            )
+            Path(output_path).parent.mkdir(parents=True)
+            with open(output_path, "wb") as destination:
+                integration_client.download_file(
+                    uploaded_file["cid"], uploaded_file["decryptionKey"],
+                    destination,
+                )
 
             # Verify file was created
             assert os.path.exists(output_path)

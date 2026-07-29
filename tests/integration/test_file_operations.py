@@ -7,6 +7,7 @@ import pytest
 import tempfile
 from ez1 import EasyOneClient
 from tests.helpers.config import config
+from tests.helpers.streaming import upload_path
 
 
 @pytest.mark.integration
@@ -39,13 +40,10 @@ class TestFileOperations:
                 temp_path = f.name
 
             try:
-                result = integration_client.upload_file(
-                    temp_path,
-                    options={
-                        "fileName": f"test_file_{i}.txt",
-                        "mimeType": "text/plain",
-                        "retentionDays": 7,
-                    },
+                result = upload_path(
+                    integration_client, temp_path,
+                    file_name=f"test_file_{i}.txt", mime_type="text/plain",
+                    retention_days=7,
                 )
                 test_files.append({
                     "cid": result["cid"],
@@ -139,14 +137,11 @@ class TestFileOperations:
             temp_path = f.name
 
         try:
-            upload_options = {
-                "fileName": "metadata_test.txt",
-                "mimeType": "text/plain",
-                "retentionDays": 14,
-                "downloadLimit": 100,
-            }
-
-            result = integration_client.upload_file(temp_path, options=upload_options)
+            result = upload_path(
+                integration_client, temp_path,
+                file_name="metadata_test.txt", mime_type="text/plain",
+                retention_days=14, download_limit=100,
+            )
             metadata = integration_client.get_metadata(result["cid"])
 
             assert metadata["filename"] is None
@@ -194,7 +189,7 @@ class TestFileOperations:
             temp_path = f.name
 
         try:
-            result = integration_client.upload_file(temp_path)
+            result = upload_path(integration_client, temp_path)
             metadata = integration_client.get_metadata(result["cid"])
 
             assert metadata["size"] is None
@@ -212,13 +207,10 @@ class TestFileOperations:
             temp_path = f.name
 
         try:
-            upload_result = integration_client.upload_file(
-                temp_path,
-                options={
-                    "fileName": "search_test.txt",
-                    "mimeType": "text/plain",
-                    "retentionDays": 7,
-                },
+            upload_result = upload_path(
+                integration_client, temp_path,
+                file_name="search_test.txt", mime_type="text/plain",
+                retention_days=7,
             )
 
             # Retry a few times to find the file in the list
@@ -275,13 +267,10 @@ class TestFileOperations:
             temp_path = f.name
 
         try:
-            result = integration_client.upload_file(
-                temp_path,
-                options={
-                    "fileName": "expiration_test.txt",
-                    "mimeType": "text/plain",
-                    "retentionDays": 30,  # Should have expiration
-                },
+            result = upload_path(
+                integration_client, temp_path,
+                file_name="expiration_test.txt", mime_type="text/plain",
+                retention_days=30,
             )
 
             metadata = integration_client.get_metadata(result["cid"])
@@ -304,14 +293,10 @@ class TestFileOperations:
 
         try:
             download_limit = 50
-            result = integration_client.upload_file(
-                temp_path,
-                options={
-                    "fileName": "download_limit_test.txt",
-                    "mimeType": "text/plain",
-                    "retentionDays": 7,
-                    "downloadLimit": download_limit,
-                },
+            result = upload_path(
+                integration_client, temp_path,
+                file_name="download_limit_test.txt", mime_type="text/plain",
+                retention_days=7, download_limit=download_limit,
             )
 
             metadata = integration_client.get_metadata(result["cid"])

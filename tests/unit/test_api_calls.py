@@ -61,28 +61,93 @@ class TestAPICalls:
             # Verify server's CID is returned
             assert result_cid == "server-generated-cid"
 
-    def test_upload_chunk_without_encrypted_metadata_legacy(self, client, mock_response):
-        """Test legacy chunk upload without encrypted metadata."""
-        mock_response.json.return_value = {"cid": "server-generated-cid", "success": True, "message": "Chunk uploaded"}
-        mock_response.ok = True
+    def test_upload_file_streams_protocol_chunks(self, client, mock_response):
+        client.chunk_size = 4
+        mock_response.json.return_value = {"cid": "server-generated-cid"}
+        source = io.BytesIO(b"abcdefg")
 
-        with patch.object(client.session, 'post', return_value=mock_response) as mock_post:
+        with patch.object(client.session, "post", return_value=mock_response) as mock_post:
+            result = client.upload_file(
+                source,
+                file_name="stream.bin",
+                file_size=7,
+                mime_type="application/octet-stream",
+            )
+
+        assert result["cid"] == "server-generated-cid"
+        assert mock_post.call_count == 2
+        assert [len(call.kwargs["data"]) for call in mock_post.call_args_list] == [32, 31]
+
+    def test_upload_file_rejects_short_source(self, client):
+        with pytest.raises(ValueError, match="ended early"):
+            client.upload_file(
+                io.BytesIO(b"ab"),
+                file_name="short.bin",
+                file_size=3,
+                mime_type="application/octet-stream",
+            )
+
+    def test_upload_file_rejects_trailing_data_before_request(self, client):
+        with patch.object(client.session, "post") as mock_post:
+            with pytest.raises(ValueError, match="more data"):
+                client.upload_file(
+                    io.BytesIO(b"abc"),
+                    file_name="long.bin",
+                    file_size=2,
+                    mime_type="application/octet-stream",
+                )
+        mock_post.assert_not_called()
+
+    def test_download_file_streams_authenticated_chunks(self, client):
+        client.chunk_size = 4
+        key, key_string = client._generate_encryption_key()
+        encrypted = client._encrypt_chunk(b"abcd", key) + client._encrypt_chunk(b"efg", key)
+        info_response = Mock(ok=True)
+        info_response.json.return_value = {
+            "downloadUrl": "https://example.com/download/test-cid",
+            "filename": None,
+            "mimeType": None,
+            "size": None,
+            "encryptedMetadata": client._encrypt_metadata({
+                "filename": "stream.bin",
+                "mimeType": "application/octet-stream",
+                "size": 7,
+            }, key),
+        }
+        download_response = Mock(ok=True)
+        download_response.iter_content.return_value = [
+            encrypted[:3], encrypted[3:35], encrypted[35:]
+        ]
+        destination = io.BytesIO()
+
+        with patch.object(client.session, "get", return_value=info_response):
+            with patch("ez1.requests.get", return_value=download_response) as mock_get:
+                metadata = client.download_file(
+                    "test-cid", key_string, destination
+                )
+
+        assert destination.getvalue() == b"abcdefg"
+        assert metadata["size"] == 7
+        mock_get.assert_called_once_with(
+            "https://example.com/download/test-cid", stream=True
+        )
+        download_response.close.assert_called_once()
+
+    def test_upload_chunk_requires_encrypted_metadata(self, client):
+        with pytest.raises(ValueError, match="encryptedMetadata is required"):
             client._upload_chunk(
                 cid=None,
                 chunk_index=0,
                 total_chunks=1,
                 encrypted_data=b"encrypted_data",
                 metadata={
-                    "fileName": "legacy.txt",
+                    "fileName": "missing.txt",
                     "fileSize": 1024,
                     "mimeType": "text/plain",
                     "retentionDays": 30,
                     "downloadLimit": None,
                 },
             )
-
-            headers = mock_post.call_args.kwargs["headers"]
-            assert "x-encrypted-metadata" not in headers
 
     def test_upload_chunk_request_format(self, client, mock_response):
         """Test that upload request has correct format (subsequent chunk with CID)."""
@@ -137,22 +202,16 @@ class TestAPICalls:
             assert result["cid"] == "test-cid"
             assert result["success"] is True
 
-    def test_complete_upload_without_encrypted_metadata_legacy(self, client, mock_response):
-        """Test legacy complete upload without encrypted metadata."""
-        mock_response.json.return_value = {"cid": "legacy-cid", "success": True}
-
-        with patch.object(client.session, 'post', return_value=mock_response):
-            result = client.complete_upload(
-                cid="legacy-cid",
+    def test_complete_upload_requires_encrypted_metadata(self, client):
+        with pytest.raises(ValueError, match="encryptedMetadata is required"):
+            client.complete_upload(
+                cid="missing-metadata",
                 metadata={
-                    "fileName": "legacy.txt",
+                    "fileName": "missing.txt",
                     "fileSize": 1024,
                     "mimeType": "text/plain",
                 },
             )
-
-            assert result["cid"] == "legacy-cid"
-            assert result["success"] is True
 
     def test_build_and_decrypt_encrypted_metadata(self, client):
         """Test public encrypted metadata helpers."""

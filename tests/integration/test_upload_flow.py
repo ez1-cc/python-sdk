@@ -5,9 +5,9 @@ Tests require a valid API key and make real network calls.
 import os
 import pytest
 import tempfile
-from pathlib import Path
 from ez1 import EasyOneClient
 from tests.helpers.config import config
+from tests.helpers.streaming import upload_path
 
 
 @pytest.mark.integration
@@ -37,13 +37,10 @@ class TestUploadFlow:
 
         try:
             # Upload the file
-            result = integration_client.upload_file(
-                temp_path,
-                options={
-                    "fileName": "test_small_file.txt",
-                    "mimeType": "text/plain",
-                    "retentionDays": 7,
-                },
+            result = upload_path(
+                integration_client, temp_path,
+                file_name="test_small_file.txt", mime_type="text/plain",
+                retention_days=7,
             )
 
             # Verify response
@@ -69,13 +66,9 @@ class TestUploadFlow:
 
         try:
             # Upload the large file
-            result = integration_client.upload_file(
-                temp_path,
-                options={
-                    "fileName": "test_large_file.bin",
-                    "mimeType": "application/octet-stream",
-                    "retentionDays": 1,  # Short retention for test files
-                },
+            result = upload_path(
+                integration_client, temp_path,
+                file_name="test_large_file.bin", retention_days=1,
             )
 
             # Verify response
@@ -98,14 +91,10 @@ class TestUploadFlow:
             temp_path = f.name
 
         try:
-            result = integration_client.upload_file(
-                temp_path,
-                options={
-                    "fileName": "custom_metadata.dat",
-                    "mimeType": "application/octet-stream",
-                    "retentionDays": 30,
-                    "downloadLimit": 5,
-                },
+            result = upload_path(
+                integration_client, temp_path,
+                file_name="custom_metadata.dat", retention_days=30,
+                download_limit=5,
             )
 
             assert "cid" in result
@@ -123,11 +112,10 @@ class TestUploadFlow:
 
         result = integration_client.upload_file(
             file_obj,
-            options={
-                "fileName": "file_like_test.txt",
-                "mimeType": "text/plain",
-                "retentionDays": 7,
-            },
+            file_name="file_like_test.txt",
+            file_size=len(test_content),
+            mime_type="text/plain",
+            retention_days=7,
         )
 
         assert "cid" in result
@@ -142,8 +130,7 @@ class TestUploadFlow:
             temp_path = f.name
 
         try:
-            # Upload without any options
-            result = integration_client.upload_file(temp_path)
+            result = upload_path(integration_client, temp_path)
 
             assert "cid" in result
             assert "decryptionKey" in result
@@ -187,13 +174,9 @@ class TestUploadFlow:
             temp_path = f.name
 
         try:
-            result = integration_client.upload_file(
-                temp_path,
-                options={
-                    "fileName": "binary_test.bin",
-                    "mimeType": "application/octet-stream",
-                    "retentionDays": 1,
-                },
+            result = upload_path(
+                integration_client, temp_path,
+                file_name="binary_test.bin", retention_days=1,
             )
 
             assert "cid" in result
@@ -210,7 +193,6 @@ class TestUploadFlow:
             pytest.skip("50MB upload skipped in local development (S3 multipart limitations)")
 
         # This test is marked as slow and may be skipped in normal runs
-        chunk_size = integration_client.chunk_size
         test_content = b"X" * (50 * 1024 * 1024)  # 50MB
 
         with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".bin") as f:
@@ -218,13 +200,9 @@ class TestUploadFlow:
             temp_path = f.name
 
         try:
-            result = integration_client.upload_file(
-                temp_path,
-                options={
-                    "fileName": "very_large_test.bin",
-                    "mimeType": "application/octet-stream",
-                    "retentionDays": 1,
-                },
+            result = upload_path(
+                integration_client, temp_path,
+                file_name="very_large_test.bin", retention_days=1,
             )
 
             assert "cid" in result

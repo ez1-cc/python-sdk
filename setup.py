@@ -5,8 +5,9 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="ez1-python-sdk",
-    version="1.1.0",
+    version="2.0.0",
     author="ez1",
+    license="MIT",
     description="Official Python SDK for EasyOne API with client-side encryption",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -20,7 +21,6 @@ setup(
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
         "Topic :: Software Development :: Libraries :: Python Modules",
-        "License :: OSI Approved :: MIT License",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
@@ -39,6 +39,7 @@ setup(
             "pytest-cov>=4.1.0",
             "black>=23.0.0",
             "mypy>=1.5.0",
+            "types-requests>=2.31.0",
         ],
     },
     keywords="ez1 file-upload encryption aes-gcm storage sdk",

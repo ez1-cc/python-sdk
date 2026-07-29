@@ -11,6 +11,7 @@ pip install ez1-python-sdk
 ## Quick Start
 
 ```python
+from pathlib import Path
 from ez1 import EasyOneClient
 
 client = EasyOneClient(
@@ -18,17 +19,16 @@ client = EasyOneClient(
     base_url='https://file.ez1.cc',  # optional
 )
 
-# Upload a file
-result = client.upload_file(
-    'my-file.pdf',
-    options={
-        'fileName': 'my-file.pdf',
-        'mimeType': 'application/pdf',
-        'retentionDays': 30,  # Days to keep the file (default: 30)
-        # Set to 0 for indefinite retention (requires unlimited retention permission)
-        'private': True,  # Optional, Basic plan or higher: restrict access to the uploader
-    }
-)
+path = Path('my-file.pdf')
+with path.open('rb') as source:
+    result = client.upload_file(
+        source,
+        file_name=path.name,
+        file_size=path.stat().st_size,
+        mime_type='application/pdf',
+        retention_days=30,
+        private=True,
+    )
 
 print(f"CID: {result['cid']}")
 print(f"Decryption Key: {result['decryptionKey']}")
@@ -39,12 +39,13 @@ All uploads encrypt filename, MIME type, and original size as client-side metada
 ## Downloading a File
 
 ```python
-# Download and decrypt a file
-data = client.download_file(
-    result['cid'],
-    result['decryptionKey'],
-    output_path='downloaded-file.pdf'
-)
+# Download, authenticate, and decrypt directly into a writable stream.
+with open('downloaded-file.pdf', 'wb') as destination:
+    metadata = client.download_file(
+        result['cid'],
+        result['decryptionKey'],
+        destination,
+    )
 ```
 
 ## Listing Files
@@ -83,14 +84,13 @@ print(decrypted.decode('utf-8'))
 EasyOneClient(
     api_key: str,
     base_url: str = None,
-    chunk_size: int = None,
 )
 ```
 
 #### Methods
 
-- `upload_file(file_path, options=None)` - Upload a file with encryption
-- `download_file(cid, decryption_key, output_path=None)` - Download and decrypt a file
+- `upload_file(source, *, file_name, file_size, mime_type, ...)` - Encrypt and upload a bounded-memory binary stream
+- `download_file(cid, decryption_key, destination)` - Authenticate and decrypt into a binary writable stream
 - `get_download_info(cid)` - Get download URL and metadata
 - `get_metadata(cid)` - Get file metadata
 - `list_files(limit=50, offset=0)` - List user's files
@@ -125,6 +125,8 @@ The SDK now includes:
 - API key format validation (must start with `up_live_`)
 - File size validation (max 100GB)
 - File type validation (blocks executable files)
+
+The declared upload size must exactly match the input stream. Downloads authenticate each encrypted chunk before writing its plaintext and reject truncated or trailing ciphertext.
 
 ## License
 

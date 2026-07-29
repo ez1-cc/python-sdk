@@ -2,6 +2,7 @@
 Unit tests for error handling scenarios.
 """
 import pytest
+import io
 from unittest.mock import Mock, patch
 from ez1 import EasyOneClient
 import requests
@@ -90,12 +91,19 @@ class TestErrorHandling:
 
     def test_download_file_download_failure(self, client):
         """Test download failure when fetching file."""
+        key, key_string = client._generate_encryption_key()
         mock_info_response = Mock()
         mock_info_response.ok = True
         mock_info_response.json.return_value = {
             "downloadUrl": "https://example.com/download/test-cid",
             "filename": "test.txt",
             "mimeType": "text/plain",
+            "size": 4,
+            "encryptedMetadata": client._encrypt_metadata({
+                "filename": "test.txt",
+                "mimeType": "text/plain",
+                "size": 4,
+            }, key),
         }
 
         mock_download_response = Mock()
@@ -105,14 +113,32 @@ class TestErrorHandling:
         with patch.object(client.session, 'get', return_value=mock_info_response):
             with patch('ez1.requests.get', return_value=mock_download_response):
                 with pytest.raises(Exception) as exc_info:
-                    client.download_file("test-cid", "decryption_key")
+                    client.download_file("test-cid", key_string, io.BytesIO())
 
                 assert "Download failed" in str(exc_info.value)
 
-    def test_upload_file_invalid_path(self, client):
-        """Test uploading file with invalid path."""
-        with pytest.raises(FileNotFoundError):
-            client.upload_file("/nonexistent/path/to/file.txt")
+    def test_download_requires_encrypted_metadata(self, client):
+        mock_info_response = Mock(ok=True)
+        mock_info_response.json.return_value = {
+            "downloadUrl": "https://example.com/download/test-cid",
+            "filename": "plaintext.txt",
+            "mimeType": "text/plain",
+            "size": 4,
+        }
+
+        with patch.object(client.session, "get", return_value=mock_info_response):
+            with pytest.raises(ValueError, match="missing encrypted metadata"):
+                client.download_file("test-cid", "unused", io.BytesIO())
+
+    def test_upload_file_requires_binary_stream(self, client):
+        """Test uploading rejects non-stream inputs."""
+        with pytest.raises(TypeError, match="binary readable stream"):
+            client.upload_file(
+                "/nonexistent/path/to/file.txt",
+                file_name="file.txt",
+                file_size=1,
+                mime_type="text/plain",
+            )
 
     def test_decrypt_with_invalid_base64_key(self, client):
         """Test decryption with invalid base64 key."""
@@ -143,7 +169,12 @@ class TestErrorHandling:
         file_obj.name = "test.bin"
 
         with pytest.raises(IOError):
-            client.upload_file(file_obj)
+            client.upload_file(
+                file_obj,
+                file_name="test.bin",
+                file_size=100,
+                mime_type="application/octet-stream",
+            )
 
     def test_session_reuse(self, client):
         """Test that session is reused across requests."""

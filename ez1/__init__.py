@@ -7,11 +7,9 @@ Provides client-side AES-GCM encryption and chunked upload functionality.
 
 import os
 import base64
-import uuid
 import json
 from urllib.parse import quote
-from typing import Optional, BinaryIO, Dict, Any
-from pathlib import Path
+from typing import Optional, BinaryIO, Dict, Any, Tuple
 
 try:
     import requests
@@ -76,15 +74,26 @@ class EasyOneClient:
 
     def upload_file(
         self,
-        file_path: str | BinaryIO,
-        options: Optional[Dict[str, Any]] = None,
+        source: BinaryIO,
+        *,
+        file_name: str,
+        file_size: int,
+        mime_type: str,
+        retention_days: int = 30,
+        download_limit: Optional[int] = None,
+        private: bool = False,
     ) -> Dict[str, str]:
         """
         Upload a file with client-side encryption.
 
         Args:
-            file_path: Path to file or file-like object
-            options: Optional metadata (fileName, mimeType, retentionDays, downloadLimit, private)
+            source: Binary stream positioned at the first byte to upload
+            file_name: User-facing filename
+            file_size: Exact number of bytes available from source
+            mime_type: User-facing MIME type
+            retention_days: Retention period
+            download_limit: Optional download count limit
+            private: Restrict access to the uploader
 
         Returns:
             Dict with 'cid' and 'decryptionKey'
@@ -93,24 +102,12 @@ class EasyOneClient:
             ValueError: If file is too large or has forbidden MIME type
             Exception: If upload fails
         """
-        options = options or {}
-
-        # Handle file input
-        if isinstance(file_path, str):
-            file_obj = open(file_path, "rb")
-            should_close = True
-            file_name = options.get("fileName") or os.path.basename(file_path)
-            # Get file size for validation
-            file_size = os.path.getsize(file_path)
-        else:
-            file_obj = file_path
-            should_close = False
-            file_name = options.get("fileName") or getattr(file_obj, "name", "unnamed")
-            # For file-like objects, read to get size
-            current_pos = file_obj.tell()
-            file_obj.seek(0, 2)  # Seek to end
-            file_size = file_obj.tell()
-            file_obj.seek(current_pos)  # Seek back to original position
+        if not hasattr(source, "read"):
+            raise TypeError("source must be a binary readable stream")
+        if not file_name or not mime_type:
+            raise ValueError("file_name and mime_type are required")
+        if not isinstance(file_size, int) or isinstance(file_size, bool) or file_size < 0:
+            raise ValueError("file_size must be a non-negative integer")
 
         # Client-side validation: Check file size (100GB max for enterprise, 5GB default)
         max_file_size = 100 * 1024 * 1024 * 1024  # 100GB
@@ -127,65 +124,69 @@ class EasyOneClient:
                 f"Forbidden file type: {file_ext}. Executable files are not allowed for security reasons."
             )
 
-        try:
-            # Generate encryption key
-            encryption_key, decryption_key = self._generate_encryption_key()
-            mime_type = options.get("mimeType", "application/octet-stream")
-            is_private = bool(options.get("private") or options.get("isPrivate"))
-            encrypted_metadata = self._encrypt_metadata(
+        encryption_key, decryption_key = self._generate_encryption_key()
+        encrypted_metadata = self._encrypt_metadata(
+            {"filename": file_name, "mimeType": mime_type, "size": file_size},
+            encryption_key,
+        )
+        total_chunks = max(1, (file_size + self.chunk_size - 1) // self.chunk_size)
+        cid = None
+
+        for chunk_index in range(total_chunks):
+            remaining = file_size - chunk_index * self.chunk_size
+            chunk = self._read_exact(source, min(self.chunk_size, max(remaining, 0)))
+            if chunk_index == total_chunks - 1 and source.read(1):
+                raise ValueError("source contains more data than file_size")
+            encrypted_chunk = self._encrypt_chunk(chunk, encryption_key)
+            cid = self._upload_chunk(
+                cid,
+                chunk_index,
+                total_chunks,
+                encrypted_chunk,
                 {
-                    "filename": file_name,
+                    "fileName": file_name,
+                    "fileSize": file_size,
                     "mimeType": mime_type,
-                    "size": file_size,
+                    "retentionDays": retention_days,
+                    "downloadLimit": download_limit,
+                    "isPrivate": private,
+                    "encryptedMetadata": encrypted_metadata,
                 },
-                encryption_key,
             )
 
-            # Calculate chunks (ensure at least 1 chunk even for empty files)
-            total_chunks = max(1, (file_size + self.chunk_size - 1) // self.chunk_size)
+        if not cid:
+            raise RuntimeError("upload completed without a server-generated CID")
+        return {"cid": cid, "decryptionKey": decryption_key}
 
-            # SECURITY: CID is now server-generated on first chunk
-            # Do not generate client-side CID
-            cid = None
-
-            # Upload chunks using streaming to avoid memory exhaustion
-            for chunk_index in range(total_chunks):
-                start = chunk_index * self.chunk_size
-                end = min(start + self.chunk_size, file_size)
-
-                # Seek to chunk position and read only this chunk (streaming)
-                file_obj.seek(start)
-                chunk = file_obj.read(end - start)
-
-                # Encrypt chunk
-                encrypted_chunk = self._encrypt_chunk(chunk, encryption_key)
-
-                # Upload chunk (server returns CID on first chunk)
-                cid = self._upload_chunk(
-                    cid,
-                    chunk_index,
-                    total_chunks,
-                    encrypted_chunk,
-                    {
-                        "fileName": file_name,
-                        "fileSize": file_size,
-                        "mimeType": mime_type,
-                        "retentionDays": options.get("retentionDays", 30),
-                        "downloadLimit": options.get("downloadLimit"),
-                        "isPrivate": is_private,
-                        "encryptedMetadata": encrypted_metadata,
-                    },
+    @staticmethod
+    def _read_exact(source: BinaryIO, length: int) -> bytes:
+        chunks = bytearray()
+        while len(chunks) < length:
+            remaining = length - len(chunks)
+            chunk = source.read(remaining)
+            if not chunk:
+                raise ValueError(
+                    f"source ended early: expected {length} bytes, received {len(chunks)}"
                 )
+            if not isinstance(chunk, bytes):
+                raise TypeError("source must return bytes")
+            if len(chunk) > remaining:
+                raise ValueError("source returned more bytes than requested")
+            chunks.extend(chunk)
+        return bytes(chunks)
 
-            return {"cid": cid, "decryptionKey": decryption_key}
-
-        finally:
-            if should_close:
-                file_obj.close()
+    @staticmethod
+    def _write_all(destination: BinaryIO, data: bytes) -> None:
+        offset = 0
+        while offset < len(data):
+            written = destination.write(data[offset:])
+            if not isinstance(written, int) or written <= 0:
+                raise IOError("destination failed to accept decrypted data")
+            offset += written
 
     def _upload_chunk(
         self,
-        cid: str | None,
+        cid: Optional[str],
         chunk_index: int,
         total_chunks: int,
         encrypted_data: bytes,
@@ -202,6 +203,8 @@ class EasyOneClient:
             For chunk 0, do not send x-cid header (server generates CID).
             For chunks > 0, send the CID returned by the server.
         """
+        if not metadata.get("encryptedMetadata"):
+            raise ValueError("encryptedMetadata is required")
         url = f"{self.base_url}/api/public/v1/upload"
 
         headers = self._get_headers()
@@ -225,8 +228,7 @@ class EasyOneClient:
         if metadata.get("downloadLimit") is not None:
             headers["x-download-limit"] = str(metadata["downloadLimit"])
 
-        if metadata.get("encryptedMetadata"):
-            headers["x-encrypted-metadata"] = metadata["encryptedMetadata"]
+        headers["x-encrypted-metadata"] = metadata["encryptedMetadata"]
 
         if metadata.get("isPrivate"):
             headers["x-private"] = "true"
@@ -281,6 +283,8 @@ class EasyOneClient:
         Returns:
             Dict with 'cid' and 'success' status
         """
+        if not metadata.get("encryptedMetadata"):
+            raise ValueError("encryptedMetadata is required")
         url = f"{self.base_url}/api/public/v1/complete-upload"
 
         headers = self._get_headers()
@@ -338,39 +342,85 @@ class EasyOneClient:
         self,
         cid: str,
         decryption_key: str,
-        output_path: Optional[str] = None,
-    ) -> bytes:
+        destination: BinaryIO,
+    ) -> Dict[str, Any]:
         """
         Download and decrypt a file.
 
         Args:
             cid: Content ID
             decryption_key: Decryption key (base64 string)
-            output_path: Optional path to save the file
+            destination: Binary stream that receives authenticated plaintext chunks
 
         Returns:
-            Decrypted file data as bytes
+            Decrypted filename, MIME type, and size
         """
-        # Get download info
         download_info = self.get_download_info(cid)
+        if not download_info.get("encryptedMetadata"):
+            raise ValueError("download is missing encrypted metadata")
+        file_info = self._decrypt_metadata(
+            download_info["encryptedMetadata"], decryption_key
+        )
+        if (
+            not isinstance(file_info, dict)
+            or not isinstance(file_info.get("filename"), str)
+            or not file_info["filename"]
+            or not isinstance(file_info.get("mimeType"), str)
+            or not file_info["mimeType"]
+            or not isinstance(file_info.get("size"), int)
+            or isinstance(file_info["size"], bool)
+            or file_info["size"] < 0
+            or file_info["size"] > 100 * 1024 * 1024 * 1024
+        ):
+            raise ValueError(
+                "download metadata does not contain a valid filename, MIME type, and size"
+            )
+        if not hasattr(destination, "write"):
+            raise TypeError("destination must be a binary writable stream")
 
-        # Download file
-        response = requests.get(download_info["downloadUrl"])
-        if not response.ok:
-            raise Exception(f"Download failed: {response.reason}")
+        response = requests.get(download_info["downloadUrl"], stream=True)
+        try:
+            if not response.ok:
+                raise Exception(f"Download failed: {response.reason}")
 
-        encrypted_data = response.content
+            key = base64.b64decode(decryption_key, validate=True)
+            aesgcm = AESGCM(key)
+            encrypted_parts = iter(response.iter_content(chunk_size=64 * 1024))
+            buffered = bytearray()
+            total_chunks = max(1, (file_info["size"] + self.chunk_size - 1) // self.chunk_size)
 
-        # Decrypt data (handles both single and multi-chunk files)
-        decrypted_data = self._decrypt_multi_chunk(encrypted_data, decryption_key)
+            for chunk_index in range(total_chunks):
+                remaining = file_info["size"] - chunk_index * self.chunk_size
+                plaintext_size = min(self.chunk_size, max(remaining, 0))
+                encrypted_size = plaintext_size + self.IV_LENGTH + 16
+                while len(buffered) < encrypted_size:
+                    try:
+                        part = next(encrypted_parts)
+                    except StopIteration as error:
+                        raise ValueError(
+                            f"encrypted download ended early at chunk {chunk_index}"
+                        ) from error
+                    if part:
+                        buffered.extend(part)
 
-        # Save to file if output path provided
-        if output_path:
-            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-            with open(output_path, "wb") as f:
-                f.write(decrypted_data)
+                encrypted_chunk = bytes(buffered[:encrypted_size])
+                del buffered[:encrypted_size]
+                nonce = encrypted_chunk[: self.IV_LENGTH]
+                plaintext = aesgcm.decrypt(
+                    nonce, encrypted_chunk[self.IV_LENGTH :], None
+                )
+                if len(plaintext) != plaintext_size:
+                    raise ValueError(f"decrypted chunk {chunk_index} has an invalid size")
+                self._write_all(destination, plaintext)
 
-        return decrypted_data
+            if buffered:
+                raise ValueError("encrypted download contains trailing data")
+            for part in encrypted_parts:
+                if part:
+                    raise ValueError("encrypted download contains trailing data")
+            return file_info
+        finally:
+            response.close()
 
     def get_download_info(self, cid: str) -> Dict[str, Any]:
         """
@@ -466,7 +516,7 @@ class EasyOneClient:
         """
         return self._decrypt_chunk(encrypted_data, key)
 
-    def _generate_encryption_key(self) -> tuple[bytes, str]:
+    def _generate_encryption_key(self) -> Tuple[bytes, str]:
         """Generate a new AES-GCM encryption key."""
         key = AESGCM.generate_key(bit_length=256)
         key_string = base64.b64encode(key).decode("utf-8")
@@ -504,49 +554,5 @@ class EasyOneClient:
         ciphertext = encrypted_data[self.IV_LENGTH :]
         return aesgcm.decrypt(nonce, ciphertext, None)
 
-    def _decrypt_multi_chunk(self, encrypted_data: bytes, key_string: str) -> bytes:
-        """
-        Decrypt data that may consist of multiple chunks.
-
-        Each chunk is encrypted separately with:
-        [12 bytes IV][encrypted data][16 bytes tag]
-
-        For multi-chunk files, we need to decrypt each chunk separately.
-        """
-        key = base64.b64decode(key_string)
-        aesgcm = AESGCM(key)
-
-        # Encryption overhead: IV (12 bytes) + tag (16 bytes) = 28 bytes
-        # Chunk size is 15MB, so encrypted chunk size is 15MB + 28 bytes
-        CHUNK_SIZE = 15 * 1024 * 1024  # 15MB
-        ENCRYPTION_OVERHEAD = 12 + 16  # IV + tag
-        ENCRYPTED_CHUNK_SIZE = CHUNK_SIZE + ENCRYPTION_OVERHEAD
-
-        # If data is smaller than one encrypted chunk, decrypt as single chunk
-        if len(encrypted_data) <= ENCRYPTED_CHUNK_SIZE:
-            return self._decrypt_chunk(encrypted_data, key_string)
-
-        # Multi-chunk file: decrypt each chunk separately
-        decrypted_chunks = []
-        offset = 0
-
-        while offset < len(encrypted_data):
-            # Calculate encrypted chunk size (last chunk may be smaller)
-            remaining_bytes = len(encrypted_data) - offset
-            current_encrypted_size = min(ENCRYPTED_CHUNK_SIZE, remaining_bytes)
-
-            # Extract encrypted chunk
-            encrypted_chunk = encrypted_data[offset:offset + current_encrypted_size]
-
-            # Decrypt this chunk
-            decrypted_chunk = self._decrypt_chunk(encrypted_chunk, key_string)
-            decrypted_chunks.append(decrypted_chunk)
-
-            offset += current_encrypted_size
-
-        # Combine all decrypted chunks
-        return b"".join(decrypted_chunks)
-
-
 __all__ = ["EasyOneClient"]
-__version__ = "1.1.0"
+__version__ = "2.0.0"
