@@ -75,7 +75,7 @@ class TestClientInit:
 
     def test_api_key_stored_as_is(self):
         """Test that API key is stored without modification."""
-        special_key = "up_live_e458375d_1ea6b2ed70c45b029e63ba4f1327197bb24cd62b29ca190b8a460bf5e386e716"
+        special_key = "up_live_redacted_test_key"
         client = EasyOneClient(api_key=special_key)
 
         assert client.api_key == special_key
